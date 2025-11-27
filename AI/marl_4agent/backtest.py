@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import yfinance as yf
 
 from config import (
     DEVICE, N_AGENTS, WINDOW_SIZE
@@ -12,91 +13,107 @@ from data_processor import DataProcessor
 from environment import MARLStockEnv
 from qmix_model import QMIX_Learner
 
-# --- 백테스트 결과 그래프 함수 ---
-def plot_backtest_results(portfolio_values, daily_pnls, test_prices, initial_capital):
-    """백테스트 결과를 시각화하는 함수 (PnL 기준)"""
+# --- 백테스트 결과 그래프 함수 (KOSPI 비교 포함) ---
+def plot_backtest_results(portfolio_values, test_prices, initial_capital):
+    """백테스트 결과를 시각화하는 함수 (KOSPI 지수 비교 포함)"""
+    # 한글 폰트 설정
+    plt.rcParams['font.family'] = 'Malgun Gothic'
+    plt.rcParams['axes.unicode_minus'] = False
+    
     dates = test_prices.index[:len(portfolio_values)]
     
+    # QMIX Agent 포트폴리오 가치
+    qmix_values = np.array(portfolio_values)
+    
+    # Buy & Hold (삼성전자)
+    samsung_start = test_prices.iloc[0]
+    shares_bought = initial_capital / samsung_start
+    buyhold_values = np.array([shares_bought * price for price in test_prices.iloc[:len(portfolio_values)]])
+    
+    # KOSPI 지수 다운로드
+    kospi_values = None
+    try:
+        test_start = test_prices.index[0]
+        test_end = test_prices.index[len(portfolio_values) - 1]
+        print(f"    KOSPI 지수 다운로드 중... ({test_start} ~ {test_end})")
+        
+        kospi_df = yf.download('^KS11', 
+                              start=test_start - pd.Timedelta(days=10), 
+                              end=test_end + pd.Timedelta(days=2),
+                              progress=False,
+                              auto_adjust=True)
+        
+        if not kospi_df.empty:
+            if isinstance(kospi_df.columns, pd.MultiIndex):
+                kospi_close = kospi_df['Close'].iloc[:, 0]
+            else:
+                kospi_close = kospi_df['Close']
+            
+            kospi_df.index = pd.to_datetime(kospi_df.index).tz_localize(None)
+            kospi_aligned = kospi_close.reindex(dates, method='ffill').fillna(method='bfill')
+            
+            kospi_start = float(kospi_aligned.iloc[0])
+            kospi_values = np.array([initial_capital * (float(price) / kospi_start) for price in kospi_aligned])
+            print(f"    ✅ KOSPI 로드 완료 (시작: {kospi_start:.2f})")
+    except Exception as e:
+        print(f"    ⚠️  KOSPI 로드 실패: {e}")
+        kospi_values = buyhold_values.copy()  # 삼성전자로 대체
+    
     # 성과 지표 계산
-    returns = pd.Series(daily_pnls) / initial_capital
+    qmix_returns = pd.Series(qmix_values).pct_change().dropna()
+    sharpe = (qmix_returns.mean() / (qmix_returns.std() + 1e-9)) * np.sqrt(252)
     
-    # Sharpe Ratio
-    sharpe = (returns.mean() / (returns.std() + 1e-9)) * np.sqrt(252)
+    downside_returns = qmix_returns[qmix_returns < 0]
+    sortino = (qmix_returns.mean() / (downside_returns.std() + 1e-9)) * np.sqrt(252) if len(downside_returns) > 0 else 0
     
-    # Sortino Ratio (하방 변동성만 고려)
-    downside_returns = returns[returns < 0]
-    downside_std = downside_returns.std() if len(downside_returns) > 0 else 1e-9
-    sortino = (returns.mean() / (downside_std + 1e-9)) * np.sqrt(252)
+    cumulative = pd.Series(qmix_values)
+    running_max = cumulative.cummax()
+    drawdown = (cumulative - running_max) / running_max * 100
+    mdd = drawdown.min()
     
-    # MDD (Maximum Drawdown)
-    cumulative = np.array(portfolio_values)
-    running_max = np.maximum.accumulate(cumulative)
-    drawdown = (cumulative - running_max) / running_max
-    mdd = drawdown.min() * 100
-    
-    # PnL 계산 (누적 손익)
-    qmix_pnl = np.array(portfolio_values) - initial_capital
-    
-    # Buy & Hold PnL 계산
-    kospi_start = test_prices.iloc[0]
-    shares_bought = initial_capital / kospi_start
-    buyhold_values = [shares_bought * price for price in test_prices.iloc[:len(portfolio_values)]]
-    buyhold_pnl = np.array(buyhold_values) - initial_capital
-    
-    # KOSPI 지수 PnL (지수 자체의 변화)
-    kospi_index_pnl = (test_prices.iloc[:len(portfolio_values)] - kospi_start).values
-    kospi_index_pnl_normalized = (kospi_index_pnl / kospi_start) * initial_capital
+    # 최종 수익률 계산
+    qmix_return = (qmix_values[-1] - initial_capital) / initial_capital * 100
+    buyhold_return = (buyhold_values[-1] - initial_capital) / initial_capital * 100
+    kospi_return = (kospi_values[-1] - initial_capital) / initial_capital * 100 if kospi_values is not None else 0
     
     # 그래프 생성
     fig, ax = plt.subplots(figsize=(14, 8))
     
-    # 제목과 성과 지표
-    final_qmix_pnl = qmix_pnl[-1]
-    final_buyhold_pnl = buyhold_pnl[-1]
-    title = f'QMIX 4-Agent 백테스트 성과 (PnL 비교)\n초기자금: {initial_capital:,.0f}원 | QMIX PnL: {final_qmix_pnl:,.0f}원 | Buy&Hold PnL: {final_buyhold_pnl:,.0f}원'
-    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
+    # 제목
+    title = f'QMIX 백테스트 성과 (초기자금: {initial_capital:,.0f} 원)\n'
+    title += f'Sharpe: {sharpe:.3f} | Sortino: {sortino:.3f} | MDD: {mdd:.2f}%'
+    ax.set_title(title, fontsize=13, pad=15)
     
-    # QMIX Agent PnL
-    ax.plot(dates, qmix_pnl, label='QMIX Agent', color='#2E86AB', linewidth=2.5, zorder=3)
+    # 포트폴리오 가치 플롯
+    ax.plot(dates, qmix_values, label=f'QMIX Agent (최종: {qmix_values[-1]:,.0f} 원)', 
+            linewidth=2, color='#1f77b4', linestyle='-')
+    ax.plot(dates, buyhold_values, label=f'Buy & Hold (최종: {buyhold_values[-1]:,.0f} 원)', 
+            linewidth=2, linestyle='--', color='#ff7f0e')
     
-    # Buy & Hold PnL
-    ax.plot(dates, buyhold_pnl, label='Buy & Hold (삼성전자)', color='#A23B72', linewidth=2, linestyle='--', alpha=0.8, zorder=2)
-    
-    # KOSPI 지수 PnL
-    ax.plot(dates, kospi_index_pnl_normalized, label='KOSPI 지수', color='#F18F01', linewidth=2, linestyle='-.', alpha=0.7, zorder=2)
-    
-    # 손익 0 기준선
-    ax.axhline(y=0, color='gray', linestyle=':', linewidth=1.5, alpha=0.5, label='손익 0')
-    
-    # 양수/음수 영역 색칠
-    ax.fill_between(dates, 0, qmix_pnl, where=(qmix_pnl >= 0), alpha=0.1, color='green', interpolate=True)
-    ax.fill_between(dates, 0, qmix_pnl, where=(qmix_pnl < 0), alpha=0.1, color='red', interpolate=True)
+    if kospi_values is not None:
+        ax.plot(dates, kospi_values, label=f'KOSPI (최종: {kospi_values[-1]:,.0f} 원)', 
+                linewidth=1.5, linestyle=':', color='#808080')
     
     # 축 설정
-    ax.set_xlabel('날짜', fontsize=12, fontweight='bold')
-    ax.set_ylabel('누적 손익 (PnL, 원)', fontsize=12, fontweight='bold')
-    ax.legend(loc='best', fontsize=11, framealpha=0.9)
-    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_xlabel('날짜', fontsize=11)
+    ax.set_ylabel('포트폴리오 가치 (원)', fontsize=11)
+    ax.legend(loc='upper left', fontsize=9, framealpha=0.95, fancybox=True, shadow=True)
+    ax.grid(True, alpha=0.3, linestyle='-', linewidth=0.5)
+    ax.set_axisbelow(True)
     
-    # Y축 포맷 (백만 원 단위)
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e6:.1f}M'))
-    
-    # X축 포맷 (2개월 간격)
+    # X축 포맷
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha='center')
     
-    # 성과 지표 텍스트 박스
-    textstr = f'Sharpe: {sharpe:.3f}\nSortino: {sortino:.3f}\nMDD: {mdd:.2f}%'
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
-            verticalalignment='top', bbox=props)
+    # Y축 포맷
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):,}'))
     
     plt.tight_layout()
-    plt.savefig('backtest_results.png', dpi=300, bbox_inches='tight')
+    plt.savefig('backtest_result.png', dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
     
-    return sharpe, sortino, mdd
+    return sharpe, sortino, mdd, qmix_return, buyhold_return, kospi_return
 
 # --- 4개 에이전트의 신호 변환 ---
 def convert_joint_action_to_signal(joint_action, action_map):
@@ -268,41 +285,45 @@ def main():
     final_shares = info["shares"]
     final_cash = info["cash"]
 
-    print("\n--- 백테스트 성능 지표 ---")
+    print("\n--- 백테스트 결과 그래프 생성 중 ---")
     test_days_actual = len(all_team_rewards)
     if test_days_actual > 0:
-        all_rewards_series = pd.Series(all_team_rewards)
-        all_raw_pnls_series = pd.Series(all_raw_pnls)
-        
-        total_pnl = all_raw_pnls_series.sum()
-        daily_avg_pnl = all_raw_pnls_series.mean()
-        daily_std = all_rewards_series.std() + 1e-9
-        sharpe_ratio = (all_rewards_series.mean() / daily_std) * np.sqrt(252)
-        win_days = (all_raw_pnls_series > 0).sum()
-        win_rate = (win_days / test_days_actual) * 100.0
-        
-        total_return_pct = ((final_portfolio_value - CAPITAL) / CAPITAL) * 100
-        
-        print(f"    - 백테스트 기간    : {test_days_actual} 일")
-        print(f"    - 초기 투자 금액   : {CAPITAL:,.0f} 원")
-        print(f"    - 최종 포트폴리오  : {final_portfolio_value:,.0f} 원")
-        print(f"    - 보유 주식        : {final_shares} 주")
-        print(f"    - 보유 현금        : {final_cash:,.0f} 원")
-        print(f"    - 누적 수익(PnL)   : {total_pnl:,.0f} 원 ({total_return_pct:+.2f}%)")
-        print(f"    - 일 평균 수익     : {daily_avg_pnl:,.0f} 원")
-        print(f"    - 일 수익 변동성   : {daily_std:.4f}")
-        print(f"    - 샤프 비율 (연환산): {sharpe_ratio:.3f}")
-        print(f"    - 승률 (일별)      : {win_rate:.2f}% ({win_days}/{test_days_actual}일)")
-        
-        # 그래프 생성
-        print("\n--- 백테스트 결과 그래프 생성 중 ---")
-        graph_sharpe, graph_sortino, graph_mdd = plot_backtest_results(
-            portfolio_values, all_raw_pnls, test_prices, CAPITAL
-        )
-        print(f"    Sharpe Ratio: {graph_sharpe:.3f}")
-        print(f"    Sortino Ratio: {graph_sortino:.3f}")
-        print(f"    MDD: {graph_mdd:.2f}%")
-        print("    그래프가 저장되었습니다: backtest_results.png")
+        try:
+            # 그래프 생성
+            sharpe, sortino, mdd, qmix_return, buyhold_return, kospi_return = plot_backtest_results(
+                portfolio_values, test_prices, CAPITAL
+            )
+            print("    ✅ 그래프 저장: backtest_result.png")
+            
+            # 성능 비교 테이블
+            print(f"\n--- Strategy Comparison ---")
+            print(f"    {'Strategy':<20} {'Final Value':>18} {'Return':>10} {'vs KOSPI':>10}")
+            print(f"    {'-'*65}")
+            print(f"    {'QMIX Agent':<20} {final_portfolio_value:>18,.0f} {qmix_return:>9.2f}% {qmix_return - kospi_return:>9.2f}%")
+            print(f"    {'Buy & Hold':<20} {(CAPITAL / test_prices.iloc[0]) * test_prices.iloc[len(portfolio_values)-1]:>18,.0f} {buyhold_return:>9.2f}% {buyhold_return - kospi_return:>9.2f}%")
+            print(f"    {'KOSPI':<20} {CAPITAL * (1 + kospi_return/100):>18,.0f} {kospi_return:>9.2f}% {0:>9.2f}%")
+            
+            # 성능 지표
+            print(f"\n    Performance Metrics:")
+            print(f"    - Sharpe Ratio: {sharpe:.3f}")
+            print(f"    - Sortino Ratio: {sortino:.3f}")
+            print(f"    - Max Drawdown: {mdd:.2f}%")
+            
+            # 추가 통계
+            all_raw_pnls_series = pd.Series(all_raw_pnls)
+            win_days = (all_raw_pnls_series > 0).sum()
+            win_rate = (win_days / test_days_actual) * 100.0
+            
+            print(f"\n    Trading Statistics:")
+            print(f"    - 백테스트 기간: {test_days_actual} 일")
+            print(f"    - 승률 (일별): {win_rate:.2f}% ({win_days}/{test_days_actual}일)")
+            print(f"    - 보유 주식: {final_shares} 주")
+            print(f"    - 보유 현금: {final_cash:,.0f} 원")
+            
+        except Exception as e:
+            print(f"    ⚠️  그래프 생성 실패: {e}")
+            import traceback
+            traceback.print_exc()
     else:
         print("    - 백테스트 기간이 0일이어서 성능을 측정할 수 없습니다.")
 
