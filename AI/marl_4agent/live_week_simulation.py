@@ -112,12 +112,21 @@ def simulate_live_week(model_path='qmix_model.pth', initial_capital=10_000_000, 
     print(f"\n사용 가능한 날짜: {len(available_dates)}일")
     
     # WINDOW_SIZE를 고려한 데이터 추출
+    # 환경이 제대로 작동하려면: WINDOW_SIZE + 시뮬레이션 일수 + 1 이상 필요
     last_date = available_dates[-1]
     last_idx = recent_features_norm.index.get_loc(last_date)
-    start_idx = max(0, last_idx - len(available_dates) - WINDOW_SIZE + 1)
+    
+    # 필요한 최소 데이터 길이 계산
+    required_length = WINDOW_SIZE + len(available_dates) + 1
+    start_idx = max(0, last_idx - required_length + 1)
     
     sim_features_norm = recent_features_norm.iloc[start_idx:last_idx+1]
     sim_prices = recent_prices.iloc[start_idx:last_idx+1]
+    
+    # 데이터 길이 검증
+    if len(sim_features_norm) < WINDOW_SIZE + 1:
+        print(f"\n오류: 데이터가 부족합니다. 필요: {WINDOW_SIZE + 1}일, 실제: {len(sim_features_norm)}일")
+        return
     
     # 6. 환경 생성
     sim_env = MARLStockEnv(
@@ -158,16 +167,21 @@ def simulate_live_week(model_path='qmix_model.pth', initial_capital=10_000_000, 
     
     obs_dict, info = sim_env.reset(initial_portfolio=portfolio)
     
-    # 시뮬레이션 시작 인덱스 (WINDOW_SIZE 이후부터)
-    sim_start_step = len(sim_features_norm) - len(available_dates) - 1
+    # 시뮬레이션 시작 인덱스 계산
+    # 환경의 max_steps = len(data) - WINDOW_SIZE - 1
+    # available_dates 시작 지점까지 진행해야 함
+    total_data_length = len(sim_features_norm)
+    sim_start_step = total_data_length - len(available_dates) - WINDOW_SIZE
     
     # 해당 스텝까지 환경을 진행
-    for _ in range(sim_start_step):
-        # Hold 액션으로 진행
-        actions_dict = {f'agent_{i}': 1 for i in range(N_AGENTS)}
-        obs_dict, _, dones_dict, _, info = sim_env.step(actions_dict)
-        if dones_dict['__all__']:
-            break
+    if sim_start_step > 0:
+        for _ in range(sim_start_step):
+            # Hold 액션으로 진행
+            actions_dict = {f'agent_{i}': 1 for i in range(N_AGENTS)}
+            obs_dict, _, dones_dict, _, info = sim_env.step(actions_dict)
+            if dones_dict['__all__']:
+                print("\n경고: 시뮬레이션 시작 전에 환경이 종료되었습니다.")
+                return
     
     # 실제 시뮬레이션 기록
     daily_results = []
