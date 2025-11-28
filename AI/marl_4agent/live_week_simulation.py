@@ -57,46 +57,67 @@ def simulate_live_week(model_path='qmix_model.pth', initial_capital=10_000_000, 
     # 1. 최근 일주일 실제 데이터 가져오기
     recent_df = fetch_recent_week_data(TICKER, days)
     
-    # 2. 전체 데이터 처리 (모델 학습에 사용된 동일한 방식)
-    processor = DataProcessor()
-    (features_unnormalized_df, prices_df, feature_names,
-     agent_0_cols, agent_1_cols, agent_2_cols, agent_3_cols) = processor.process()
+    # 2. 학습 데이터로 scaler를 fit하기 위해 과거 데이터 가져오기
+    print("\n학습용 과거 데이터 로드 중...")
+    processor_train = DataProcessor()
+    (train_features_unnorm, train_prices, feature_names,
+     agent_0_cols, agent_1_cols, agent_2_cols, agent_3_cols) = processor_train.process()
     
-    # 3. 최근 일주일 데이터만 추출
-    recent_dates = recent_df.index
+    # 3. 최근 일주일 데이터를 동일한 방식으로 새로 처리
+    print("\n최근 일주일 데이터를 새로 다운로드하고 처리 중...")
     
-    # 최근 일주일 데이터가 전체 데이터에 포함되어 있는지 확인
-    available_dates = [d for d in recent_dates if d in features_unnormalized_df.index]
+    # 최근 데이터의 시작일과 종료일 계산 (WINDOW_SIZE 고려)
+    end_date = recent_df.index[-1]
+    start_date = end_date - timedelta(days=days + WINDOW_SIZE + 30)  # 여유있게
     
-    if len(available_dates) < days:
-        print(f"\n경고: 요청한 {days}일 중 {len(available_dates)}일만 사용 가능합니다.")
-        if len(available_dates) == 0:
-            print("사용 가능한 데이터가 없습니다. 프로그램을 종료합니다.")
-            return
+    # 최근 데이터용 processor 생성 (새로 다운로드)
+    processor_recent = DataProcessor(
+        ticker=TICKER,
+        vix_ticker=processor_train.vix_ticker,
+        start=start_date.strftime('%Y-%m-%d'),
+        end=(end_date + timedelta(days=1)).strftime('%Y-%m-%d')
+    )
     
-    # 4. 시뮬레이션을 위한 데이터 준비 (WINDOW_SIZE 이전 데이터 포함)
-    last_date = available_dates[-1]
-    last_idx = features_unnormalized_df.index.get_loc(last_date)
+    # 최근 데이터 새로 다운로드 및 처리
+    recent_full_df = processor_recent.fetch_data()
+    recent_features_unnorm = processor_recent.calculate_features(recent_full_df)
+    recent_prices = recent_features_unnorm['Close'].copy()
+    recent_features_unnorm = recent_features_unnorm[feature_names]
     
-    # WINDOW_SIZE만큼 이전 데이터부터 시작
-    start_idx = max(0, last_idx - len(available_dates) - WINDOW_SIZE + 1)
+    # 4. 정규화 (학습 데이터로 fit한 scaler 사용)
+    print("\n데이터 정규화 중...")
     
-    sim_features_unnorm = features_unnormalized_df.iloc[start_idx:last_idx+1]
-    sim_prices = prices_df.iloc[start_idx:last_idx+1]
-    
-    # 5. 정규화 (전체 데이터로 학습된 scaler 사용)
-    # 학습 데이터로 scaler를 fit하고, 시뮬레이션 데이터를 transform
-    total_days = len(features_unnormalized_df)
+    # 학습 데이터의 일부를 train으로 사용 (scaler fit용)
+    total_days = len(train_features_unnorm)
     test_days = 252
     split_idx = total_days - test_days
     
-    train_features_unnorm = features_unnormalized_df.iloc[:split_idx]
+    train_for_scaler = train_features_unnorm.iloc[:split_idx]
     
-    # Scaler fit
-    train_features_norm, sim_features_norm = processor.normalize_data(
-        train_features_unnorm, 
-        sim_features_unnorm
+    # Scaler fit & transform
+    _, recent_features_norm = processor_train.normalize_data(
+        train_for_scaler, 
+        recent_features_unnorm
     )
+    
+    # 5. 최근 일주일만 추출
+    available_dates = [d for d in recent_df.index if d in recent_features_norm.index]
+    
+    if len(available_dates) == 0:
+        print("\n오류: 최근 데이터를 처리할 수 없습니다.")
+        print(f"요청한 날짜 범위: {recent_df.index[0]} ~ {recent_df.index[-1]}")
+        print(f"처리된 데이터 범위: {recent_features_norm.index[0]} ~ {recent_features_norm.index[-1]}")
+        return
+    
+    print(f"\n사용 가능한 날짜: {len(available_dates)}일")
+    
+    # WINDOW_SIZE를 고려한 데이터 추출
+    last_date = available_dates[-1]
+    last_idx = recent_features_norm.index.get_loc(last_date)
+    start_idx = max(0, last_idx - len(available_dates) - WINDOW_SIZE + 1)
+    
+    sim_features_norm = recent_features_norm.iloc[start_idx:last_idx+1]
+    sim_prices = recent_prices.iloc[start_idx:last_idx+1]
     
     # 6. 환경 생성
     sim_env = MARLStockEnv(
