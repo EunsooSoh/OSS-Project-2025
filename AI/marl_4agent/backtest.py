@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import yfinance as yf
+import random
 
 from config import (
     DEVICE, N_AGENTS, WINDOW_SIZE
@@ -12,6 +13,19 @@ from config import (
 from data_processor import DataProcessor
 from environment import MARLStockEnv
 from qmix_model import QMIX_Learner
+
+
+# 랜덤 시드 고정 함수
+def set_seed(seed=42):
+    """재현 가능한 결과를 위한 랜덤 시드 고정"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # --- 백테스트 결과 그래프 함수 (KOSPI 비교 포함) ---
 def plot_backtest_results(portfolio_values, test_prices, initial_capital):
@@ -249,14 +263,20 @@ def main():
     parser = argparse.ArgumentParser(description="QMIX Stock Trading Backtest (Load Trained Model)")
     parser.add_argument('--capital', type=float, default=10000000, help="투자 금액 (원)")
     parser.add_argument('--model', type=str, default='qmix_model.pth', help="학습된 모델 파일 경로")
+    parser.add_argument('--seed', type=int, default=42, help="랜덤 시드 (재현성)")
     args = parser.parse_args()
     
     CAPITAL = args.capital
     MODEL_PATH = args.model
+    SEED = args.seed
+    
+    # 랜덤 시드 고정
+    set_seed(SEED)
     
     print(f"\n=== 백테스트 설정 ===")
     print(f"투자 금액: {CAPITAL:,.0f}원")
     print(f"모델 파일: {MODEL_PATH}")
+    print(f"랜덤 시드: {SEED}")
     print(f"사용 장치: {DEVICE}")
 
     # 데이터 로드
