@@ -3,13 +3,10 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# Build outputs
-dist/
+# Production builds
 build/
-*.local
+dist/
 
 # Environment variables
 .env
@@ -18,7 +15,7 @@ build/
 .env.test.local
 .env.production.local
 
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
@@ -60,12 +57,6 @@ jspm_packages/
 # Optional eslint cache
 .eslintcache
 
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
 # Optional REPL history
 .node_repl_history
 
@@ -79,89 +70,38 @@ jspm_packages/
 .cache
 .parcel-cache
 
-# Next.js build output
+# next.js build output
 .next
 
-# Nuxt.js build / generate output
+# nuxt.js build output
 .nuxt
 
-# Gatsby files
-.cache/
-public
+# vuepress build output
+.vuepress/dist
 
-# Storybook build outputs
-.out
-.storybook-out
+# Serverless directories
+.serverless
 
-# Temporary folders
-tmp/
-temp/
+# FuseBox cache
+.fusebox/
 
-# Python (백엔드)
+# DynamoDB Local files
+.dynamodb/
+
+# Data files
+src/data/
+
+# AI model files
+*.pt
+*.pth
+*.pkl
+*.joblib
+*.npz
+
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.venv/
 
-# AI 모델 파일 (용량이 클 수 있음)
-*.pkl
-*.h5
-*.pt
-*.pth
-*.onnx
-*.pb
-models/
-checkpoints/
-
-# 특정 AI 모델 파일들
-back/2025-2-CSC4004-1-7-Libri-main/AI/a2c/a2c_samsung.pt
-back/2025-2-CSC4004-1-7-Libri-main/AI/marl_3agent/best_model.pth
-back/2025-2-CSC4004-1-7-Libri-main/AI/marl_4agent/checkpoint.pth
-back/2025-2-CSC4004-1-7-Libri-main/AI/marl_4agent/qmix_model.pth
-
-# 데이터 파일
-*.csv
-*.json
-data/
-datasets/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# Package files
+package-lock.json
