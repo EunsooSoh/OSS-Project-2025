@@ -225,13 +225,22 @@ def simulate_live_week(model_path='qmix_model.pth', scaler_path='scaler.pkl',
         
         vote_sum = sum(votes)
         
-        # 신호 결정
-        if vote_sum >= 2:
+        # 신호 결정 (marl_3agent와 동일한 로직)
+        if vote_sum >= 3:
+            final_signal = "적극 매수"
+            signal_strength = 1.0
+        elif vote_sum > 0:
             final_signal = "매수"
             signal_strength = vote_sum / N_AGENTS
-        elif vote_sum <= -2:
+        elif vote_sum == 0:
+            final_signal = "보유"
+            signal_strength = 0.0
+        elif vote_sum < 0 and vote_sum > -3:
             final_signal = "매도"
             signal_strength = abs(vote_sum) / N_AGENTS
+        elif vote_sum <= -3:
+            final_signal = "적극 매도"
+            signal_strength = 1.0
         else:
             final_signal = "보유"
             signal_strength = 0.0

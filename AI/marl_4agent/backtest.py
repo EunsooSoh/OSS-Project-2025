@@ -187,13 +187,14 @@ def convert_joint_action_to_signal(joint_action, action_map):
     action_to_score = {"Long": 1, "Hold": 0, "Short": -1}
     score = sum(action_to_score[action_map[a]] for a in joint_action)
     
+    # marl_3agent와 동일한 로직
     if score >= 3:
         return "적극 매수"
-    elif score == 2 or score == 1:
+    elif score > 0:
         return "매수"
     elif score == 0:
         return "보유"
-    elif score == -1 or score == -2:
+    elif score < 0 and score > -3:
         return "매도"
     elif score <= -3:
         return "적극 매도"
