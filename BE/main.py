@@ -6,7 +6,7 @@ from typing import Optional, List
 import numpy as np
 
 import config
-from database import get_db, init_db, TechnicalIndicator, InvestmentRecord, Portfolio
+from database import get_db, init_db, TechnicalIndicator, InvestmentRecord, Portfolio, StockPrice
 from models import (
     MarketDataInput, ModelPredictionResponse, PortfolioCapitalRequest,
     PortfolioCapitalResponse, InvestmentHistoryQuery, InvestmentRecordResponse,
@@ -15,6 +15,7 @@ from models import (
 )
 from gpt_service import interpret_model_output
 from model_loader import model_loader
+from stock_data_fetcher import stock_fetcher
 
 app = FastAPI(title="AI Trading Backend", version="1.0.0")
 
@@ -418,6 +419,92 @@ async def get_indicator_history(
         result.append(data)
     
     return result
+
+@app.post("/stock/fetch")
+async def fetch_stock_data(
+    symbol: str = "005930.KS",
+    period: str = "1mo",
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """
+    yfinance로 주가 데이터를 가져와서 DB에 저장
+    
+    Args:
+        symbol: 주식 심볼 (예: "005930.KS" for 삼성전자)
+        period: 기간 ("1mo", "3mo", "6mo", "1y" 등)
+    """
+    result = stock_fetcher.fetch_and_save_stock_data(db, symbol, period)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result["message"])
+    
+    return result
+
+@app.get("/stock/prices")
+async def get_stock_prices(
+    symbol: str = "005930",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """
+    DB에서 주가 데이터 조회
+    
+    Args:
+        symbol: 주식 심볼
+        start_date: 시작 날짜 (YYYY-MM-DD)
+        end_date: 종료 날짜 (YYYY-MM-DD)
+        limit: 최대 레코드 수
+    """
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+    
+    prices = stock_fetcher.get_stock_prices(db, symbol, start, end, limit)
+    
+    return [
+        {
+            "date": price.date.isoformat(),
+            "symbol": price.symbol,
+            "open": price.open,
+            "high": price.high,
+            "low": price.low,
+            "close": price.close,
+            "volume": price.volume,
+            "adj_close": price.adj_close
+        }
+        for price in prices
+    ]
+
+@app.get("/stock/latest")
+async def get_latest_stock_price(
+    symbol: str = "005930",
+    db: Session = Depends(get_db),
+    authenticated: bool = Depends(verify_api_key)
+):
+    """
+    가장 최근 주가 데이터 조회
+    
+    Args:
+        symbol: 주식 심볼
+    """
+    price = stock_fetcher.get_latest_price(db, symbol)
+    
+    if not price:
+        raise HTTPException(status_code=404, detail=f"No price data found for symbol: {symbol}")
+    
+    return {
+        "date": price.date.isoformat(),
+        "symbol": price.symbol,
+        "open": price.open,
+        "high": price.high,
+        "low": price.low,
+        "close": price.close,
+        "volume": price.volume,
+        "adj_close": price.adj_close
+    }
 
 if __name__ == "__main__":
     import uvicorn

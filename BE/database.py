@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text, Index
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text, Index, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -7,6 +7,25 @@ import config
 engine = create_engine(config.DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+class StockPrice(Base):
+    """주가 데이터 테이블"""
+    __tablename__ = "stock_prices"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String(20), index=True)
+    date = Column(Date, index=True)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    close = Column(Float)
+    volume = Column(Integer)
+    adj_close = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_symbol_date', 'symbol', 'date', unique=True),
+    )
 
 class TechnicalIndicator(Base):
     __tablename__ = "technical_indicators"
