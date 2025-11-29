@@ -175,7 +175,7 @@ async def predict_model3(
 ):
     """Model 3 예측"""
     try:
-        signal, confidence, indicators = model_loader.predict_model_3(symbol=data.symbol)
+        signal, confidence, indicators = model_loader.predict_model_3(data.features)
         gpt_explanation = await interpret_model_output(signal, indicators)
         
         return ModelPredictionResponse(

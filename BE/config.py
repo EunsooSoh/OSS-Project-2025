@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/trading_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
 # OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

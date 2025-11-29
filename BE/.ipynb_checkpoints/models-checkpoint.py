@@ -4,11 +4,7 @@ from datetime import datetime
 
 class MarketDataInput(BaseModel):
     symbol: str = Field(default="005930", description="Stock symbol")
-    # ✅ 수정: 기본값을 빈 dict로
-    features: Dict[str, float] = Field(
-        default_factory=dict,
-        description="(선택) 프론트에서 계산한 지표; 비워두면 백엔드에서 계산"
-    )
+    features: Dict[str, float] = Field(..., description="Technical indicators")
     
 class ModelPredictionResponse(BaseModel):
     model_type: str
