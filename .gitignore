@@ -34,6 +34,7 @@ Thumbs.db
 # Logs
 logs
 *.log
+output.log
 
 # Runtime data
 pids
@@ -105,3 +106,21 @@ __pycache__/
 
 # Package files
 package-lock.json
+
+# AI model checkpoints and trained models
+AI/**/checkpoint.pth
+AI/**/best_model.pth
+AI/**/qmix_model.pth
+AI/**/*.pt
+AI/**/*.pth
+AI/**/*.pkl
+AI/**/*.joblib
+AI/**/*.npz
+
+# AI training outputs
+AI/**/output.log
+AI/**/reports/
+AI/**/checkpoints/
+
+# Placeholder files
+placeholder.txt
